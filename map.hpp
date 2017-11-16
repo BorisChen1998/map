@@ -1,41 +1,22 @@
-/**
- * implement a container like std::map
- */
 #ifndef SJTU_MAP_HPP
 #define SJTU_MAP_HPP
 
-// only for std::less<T>
 #include <functional>
 #include <cstddef>
 #include "utility.hpp"
 #include "exceptions.hpp"
+#include <cstdio>
 #include <iostream>
 using namespace std;
 int mmax(int x, int y){
     return x>y ? x:y;
 }
-
 namespace sjtu {
 
-template<
-	class Key,
-	class T,
-	class Compare = std::less<Key>
-> class map {
+template<class Key, class T, class Compare = std::less<Key>>
+class map {
 public:
-	/**
-	 * the internal type of data.
-	 * it should have a default constructor, a copy constructor.
-	 * You can use sjtu::map as value_type by typedef.
-	 */
 	typedef pair<Key, T> value_type;
-	/**
-	 * see BidirectionalIterator at CppReference for help.
-	 *
-	 * if there is anything wrong throw invalid_iterator.
-	 *     like it = map.begin(); --it;
-	 *       or it = map.end(); ++end();
-	 */
     struct fnode{
         fnode * next;
         fnode * pre;
@@ -135,12 +116,12 @@ public:
 		}
 		iterator operator--(int) {
             iterator tmp = *this;
-            if (p->pre == NULL) throw index_out_of_bound();
+            if (p->pre->pre == NULL) throw index_out_of_bound();
             p = p->pre;
             return tmp;
 		}
 		iterator & operator--() {
-            if (p->pre == NULL) throw index_out_of_bound();
+            if (p->pre->pre == NULL) throw index_out_of_bound();
             p = p->pre;
             return *this;
 		}
@@ -152,16 +133,20 @@ public:
             return *(p->data);
 		}
 		bool operator==(const iterator &rhs) const {
-            return &(*(p->data)) == &(*(rhs.nodeptr()->data));
+		    if (p->data == NULL && rhs.nodeptr()->data == NULL) return ownerptr() == rhs.ownerptr();
+            return p->data == rhs.nodeptr()->data;
 		}
 		bool operator==(const const_iterator &rhs) const {
-            return &(*(p->data)) == &(*(rhs.nodeptr()->data));
+            if (p->data == NULL && rhs.nodeptr()->data == NULL) return ownerptr() == rhs.ownerptr();
+            return p->data == rhs.nodeptr()->data;
 		}
 		bool operator!=(const iterator &rhs) const {
-            return &(*(p->data)) != &(*(rhs.nodeptr()->data));
+            if (p->data == NULL && rhs.nodeptr()->data == NULL) return ownerptr() != rhs.ownerptr();
+            return p->data != rhs.nodeptr()->data;
 		}
 		bool operator!=(const const_iterator &rhs) const {
-            return &(*(p->data)) != &(*(rhs.nodeptr()->data));
+            if (p->data == NULL && rhs.nodeptr()->data == NULL) return ownerptr() != rhs.ownerptr();
+            return p->data != rhs.nodeptr()->data;
 		}
 		value_type* operator->() const noexcept {
             return p->data;
@@ -176,6 +161,9 @@ public:
 		fnode * nodeptr()const{
             if (p == NULL) throw invalid_iterator();
             return p;
+		}
+		const map* ownerptr()const{
+            return owner;
 		}
 	};
 	class const_iterator {
@@ -256,26 +244,30 @@ public:
             }
             const_iterator operator--(int) {
                 const_iterator tmp = *this;
-                if (p->pre == NULL) throw index_out_of_bound();
+                if (p->pre->pre == NULL) throw index_out_of_bound();
                 p = p->pre;
                 return tmp;
             }
             const_iterator & operator--() {
-                if (p->pre == NULL) throw index_out_of_bound();
+                if (p->pre->pre == NULL) throw index_out_of_bound();
                 p = p->pre;
                 return *this;
             }
             bool operator==(const iterator &rhs) const {
-                return operator->() == rhs.operator->();
+                if (p->data == NULL && rhs.nodeptr()->data == NULL) return ownerptr() == rhs.ownerptr();
+                return p->data == rhs.nodeptr()->data;
             }
             bool operator==(const const_iterator &rhs) const {
-                return operator->() == rhs.operator->();
+               if (p->data == NULL && rhs.nodeptr()->data == NULL) return ownerptr() == rhs.ownerptr();
+                return p->data == rhs.nodeptr()->data;
             }
             bool operator!=(const iterator &rhs) const {
-                return operator->() != rhs.operator->();
+                if (p->data == NULL && rhs.nodeptr()->data == NULL) return ownerptr() != rhs.ownerptr();
+                return p->data != rhs.nodeptr()->data;
             }
             bool operator!=(const const_iterator &rhs) const {
-                return operator->() != rhs.operator->();
+                if (p->data == NULL && rhs.nodeptr()->data == NULL) return ownerptr() != rhs.ownerptr();
+                return p->data != rhs.nodeptr()->data;
             }
             value_type & operator*() const {
                 if (p->next == NULL || p->pre == NULL) throw invalid_iterator();
@@ -294,6 +286,9 @@ public:
             fnode * nodeptr()const{
                 if (p == NULL) throw invalid_iterator();
                 return p;
+            }
+            const map* ownerptr()const{
+                return owner;
             }
 	};
 private:
@@ -344,6 +339,7 @@ private:
                 f->pre = t;
                 t->next = f;
             }
+			t->height = 1;
             iterator tmp(t, this);
             pair<iterator, bool> re(tmp, true);
             return re;
@@ -377,58 +373,81 @@ private:
             return re;
         }
 	}
-	fnode* erase1(value_type& value, fnode *&t){
+	fnode* erase1(value_type& value, fnode *&t, fnode *&f, int dir, int tf){
 	    Compare com;
         if (t == NULL) return NULL;
         if (com(value.first, t->data->first)){
-            t->left = erase1(value, t->left);
-            if (h(t->right) - h(t->left) == 2)
-            {
+            t->left = erase1(value, t->left, t, -1, tf);
+            if (h(t->right) - h(t->left) == 2){
                 fnode *r =  t->right;
                 if (h(r->left) > h(r->right))
                     t = RL(t);
                 else
                     t = RR(t);
             }
+            t->height = mmax(h(t->left), h(t->right)) + 1;
+            return t;
         }
         else if (com(t->data->first, value.first)){
-            t->right = erase1(value, t->right);
-            if (h(t->left) - h(t->right) == 2)
-            {
+            t->right = erase1(value, t->right, t, 1, tf);
+            if (h(t->left) - h(t->right) == 2){
                 fnode *l =  t->left;
                 if (h(l->right) > h(l->left))
                     t = LR(t);
                 else
                     t = LL(t);
             }
+            t->height = mmax(h(t->left), h(t->right)) + 1;
+            return t;
         }
         else if (t->left != NULL && t->right != NULL){
             if (h(t->left) > h(t->right)){
-                fnode * tmp = t->left;
-                while (tmp->right != NULL) tmp = tmp->right;
-                delete t->data;
-                t->data = new value_type(*(tmp->data));
-                t->left = erase1(*(tmp->data), t->left);
+                fnode * tmp = t->pre;
+                t->pre->next = t->next;
+                t->next->pre = t->pre;
+                t->left = erase1(*(tmp->data), t->left, t, -1, 1);
+                tmp->left = t->left;
+                tmp->right = t->right;
+                tmp->height = mmax(h(t->left), h(t->right))+1;
+                delete t;
+                if (dir == -1){
+                    f->left = tmp;
+                }
+                else if (dir == 1){
+                    f->right = tmp;
+                }
+                return tmp;
             }
             else{
-                fnode * tmp = t->right;
-                while (tmp->left != NULL) tmp = tmp->left;
-                delete t->data;
-                t->data = new value_type(*(tmp->data));
-                t->right = erase1(*(tmp->data), t->right);
+                fnode * tmp = t->next;
+                t->pre->next = t->next;
+                t->next->pre = t->pre;
+                t->right = erase1(*(tmp->data), t->right, t, 1, 1);
+                tmp->left = t->left;
+                tmp->right = t->right;
+				tmp->height = mmax(h(t->left), h(t->right)) + 1;
+                delete t;
+                if (dir == -1){
+                    f->left = tmp;
+                }
+                else if (dir == 1){
+                    f->right = tmp;
+                }
+                return tmp;
             }
         }
         else{
             fnode * oldnode = t;
             t = (t->left != NULL) ? t->left : t->right;
-            oldnode->pre->next = oldnode->next;
-            oldnode->next->pre = oldnode->pre;
-            delete oldnode;
+            if (tf == 0) {
+                oldnode->pre->next = oldnode->next;
+                oldnode->next->pre = oldnode->pre;
+                delete oldnode;
+            }
+            return t;
         }
-        return t;
 	}
 	iterator find1(const Key &key, fnode*t)const{
-	    //cout << "here1" << endl;
 	    Compare com;
         if (t == NULL) return tail;
         if (com(key, t->data->first)){
@@ -441,7 +460,6 @@ private:
         return tmp;
 	}
 	const_iterator find2(const Key &key, fnode*t)const{
-	    //cout << "here2" << endl;
 	    Compare com;
         if (t == NULL){
             const_iterator tmp(tail);
@@ -473,7 +491,6 @@ public:
         if (!other.empty()){
             iterator tmp = other.begin();
             while(tmp != other.end()){
-                //cout << (*tmp).second << endl;
                 insert(*tmp);
                 tmp++;
             }
@@ -502,8 +519,8 @@ public:
         return (*tmp).second;
 	}
 	const T & at(const Key &key) const {
-        iterator tmp = find(key);
-        if (tmp == tail) throw index_out_of_bound();
+        const_iterator tmp = find(key);
+        if (tmp == cend()) throw index_out_of_bound();
         return (*tmp).second;
 	}
 	T & operator[](const Key &key) {//insert when none
@@ -517,8 +534,8 @@ public:
         return (*tmp).second;
 	}
 	const T & operator[](const Key &key) const {
-        iterator tmp = find(key);
-        if (tmp == tail) throw index_out_of_bound();
+        const_iterator tmp = find(key);
+        if (tmp == cend()) throw index_out_of_bound();
         return (*tmp).second;
 	}
 	iterator begin() const{
@@ -573,9 +590,7 @@ public:
 	void erase(iterator pos) {
         if (&pos.return_owner() != this) throw invalid_iterator();
         if (pos == end()) throw invalid_iterator();
-        //(pos - 1).return_node().next = &(pos + 1).return_node();
-        //(pos + 1).return_node().pre = &(pos - 1).return_node();
-        root = erase1(*pos, root);
+        root = erase1(*pos, root, root, 0, 0);
         len--;
 	}
 	size_t count(const Key &key) const {
